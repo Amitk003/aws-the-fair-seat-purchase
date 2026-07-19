@@ -153,6 +153,7 @@ Resources:
             Principal:
               Service:
                 - states.amazonaws.com
+                - lambda.amazonaws.com
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
@@ -339,7 +340,7 @@ Resources:
   SeatMapBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub seat-map-cache-${AWS::AccountId}
+      BucketName: !Sub seat-map-cache-${StageName}-${AWS::AccountId}
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: false
