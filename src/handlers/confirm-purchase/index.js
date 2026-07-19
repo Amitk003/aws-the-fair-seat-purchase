@@ -1,6 +1,6 @@
 const { TransactWriteItemsCommand } = require('@aws-sdk/client-dynamodb');
 const { marshall } = require('@aws-sdk/util-dynamodb');
-const { getClient, getTableName } = require('../utils/dynamodb');
+const { getClient, getTableName } = require('../../utils/dynamodb');
 
 const client = getClient();
 const TABLE_NAME = getTableName();

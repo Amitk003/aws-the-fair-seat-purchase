@@ -13,9 +13,8 @@ parallel = true
 [default.deploy]
 [default.deploy.parameters]
 capabilities = "CAPABILITY_IAM"
-confirm_changeset = true
+confirm_changeset = false
 resolve_s3 = true
 s3_prefix = "the-fair-seat-purchase"
 region = "us-east-1"
-image_repository = ""
 disable_rollback = true

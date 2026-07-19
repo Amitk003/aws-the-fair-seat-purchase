@@ -2,9 +2,9 @@ const {
   SFNClient,
   StartExecutionCommand,
 } = require('@aws-sdk/client-sfn');
-const { getClient, getTableName } = require('../utils/dynamodb');
-const { tryAcquireLock, complete, deleteLock } = require('../utils/idempotency');
-const { buildScheduleName } = require('../utils/scheduler');
+const { getClient, getTableName } = require('../../utils/dynamodb');
+const { tryAcquireLock, complete, deleteLock } = require('../../utils/idempotency');
+const { buildScheduleName } = require('../../utils/scheduler');
 
 const ddbClient = getClient();
 const TABLE_NAME = getTableName();

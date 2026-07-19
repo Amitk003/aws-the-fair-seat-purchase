@@ -1,8 +1,8 @@
 const { UpdateItemCommand } = require('@aws-sdk/client-dynamodb');
 const { marshall, unmarshall } = require('@aws-sdk/util-dynamodb');
-const { getClient, getTableName } = require('../utils/dynamodb');
-const { tryAcquireLock, complete, deleteLock } = require('../utils/idempotency');
-const { scheduleEviction } = require('../utils/scheduler');
+const { getClient, getTableName } = require('../../utils/dynamodb');
+const { tryAcquireLock, complete, deleteLock } = require('../../utils/idempotency');
+const { scheduleEviction } = require('../../utils/scheduler');
 
 const client = getClient();
 const TABLE_NAME = getTableName();

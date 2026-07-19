@@ -268,7 +268,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: hold-seat
-      CodeUri: src/handlers/hold-seat.js
+      CodeUri: src/handlers/hold-seat/
       Handler: index.handler
       Role: !GetAtt HoldSeatRole.Arn
       Environment:
@@ -286,7 +286,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: stream-consumer
-      CodeUri: src/handlers/stream-consumer.js
+      CodeUri: src/handlers/stream-consumer/
       Handler: index.handler
       Role: !GetAtt StreamConsumerRole.Arn
       Environment:
@@ -309,7 +309,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: confirm-purchase
-      CodeUri: src/handlers/confirm-purchase.js
+      CodeUri: src/handlers/confirm-purchase/
       Handler: index.handler
       Role: !GetAtt ConfirmPurchaseRole.Arn
 
@@ -317,7 +317,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: checkout
-      CodeUri: src/handlers/checkout.js
+      CodeUri: src/handlers/checkout/
       Handler: index.handler
       Role: !GetAtt HoldSeatRole.Arn
       Environment:
