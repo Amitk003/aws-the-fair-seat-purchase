@@ -79,7 +79,7 @@ async function writeBatchWithRetry(items, attempt = 1) {
 
 async function seedTable(seats) {
   const chunks = chunkArray(seats, 25);
-  const CONCURRENCY = 50;
+  const CONCURRENCY = 30;
   let totalWritten = 0;
 
   console.log(`Sending writes in concurrent batches of ${CONCURRENCY}...`);
