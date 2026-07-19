@@ -368,6 +368,68 @@ Resources:
             Action: s3:GetObject
             Resource: !Sub ${SeatMapBucket.Arn}/*
 
+  # ============================================================
+  # Observability Alarms & SNS Topic
+  # ============================================================
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: Ticketing-Alarms
+
+  TicketingThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Ticketing-DynamoDB-Throttled
+      AlarmDescription: DynamoDB requests are being throttled
+      Namespace: AWS/DynamoDB
+      MetricName: ThrottledRequests
+      Dimensions:
+        - Name: TableName
+          Value: !Ref TicketingSystemOps
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmTopic
+
+  StreamIteratorAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Ticketing-Stream-IteratorAge
+      AlarmDescription: DynamoDB Stream consumer is falling behind
+      Namespace: AWS/DynamoDB
+      MetricName: IteratorAgeMilliseconds
+      Dimensions:
+        - Name: TableName
+          Value: !Ref TicketingSystemOps
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 5000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmTopic
+
+  ScheduleCountAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Ticketing-ScheduleCount-High
+      AlarmDescription: EventBridge schedule count approaching regional quota
+      Namespace: AWS/Scheduler
+      MetricName: ScheduleCount
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmTopic
+
 Outputs:
   HttpApiUrl:
     Description: Base URL for the API Gateway
