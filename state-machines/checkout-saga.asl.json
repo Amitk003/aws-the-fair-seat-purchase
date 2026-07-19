@@ -1,0 +1,175 @@
+{
+  "Comment": "Checkout saga - validates idempotency, processes payment, cancels eviction, confirms purchase",
+  "StartAt": "ValidateIdempotency",
+  "States": {
+    "ValidateIdempotency": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "checkout",
+        "Payload": {
+          "action": "validateIdempotency",
+          "idempotencyKey.$": "$.idempotencyKey"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "IsDuplicate"
+    },
+    "IsDuplicate": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.Payload.isDuplicate",
+          "BooleanEquals": true,
+          "Next": "ReturnCachedResponse"
+        }
+      ],
+      "Default": "ChargeCreditCard"
+    },
+    "ReturnCachedResponse": {
+      "Type": "Succeed",
+      "OutputPath": "$.Payload.response"
+    },
+    "ChargeCreditCard": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "checkout",
+        "Payload": {
+          "action": "processPayment",
+          "fanId.$": "$.fanId",
+          "seatId.$": "$.seatId",
+          "amount.$": "$.amount",
+          "paymentToken.$": "$.paymentToken"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 1,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "PaymentFailed"
+        }
+      ],
+      "Next": "PaymentDecided"
+    },
+    "PaymentDecided": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.Payload.status",
+          "StringEquals": "success",
+          "Next": "CancelEvictionSchedule"
+        }
+      ],
+      "Default": "PaymentFailed"
+    },
+    "PaymentFailed": {
+      "Type": "Fail",
+      "Cause": "Payment processing failed",
+      "Error": "PaymentFailedError"
+    },
+    "CancelEvictionSchedule": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:scheduler:deleteSchedule",
+      "Parameters": {
+        "Name.$": "$.scheduleName"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["Scheduler.ResourceNotFoundException"],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 1,
+          "BackoffRate": 1
+        },
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "ConfirmPurchase"
+    },
+    "ConfirmPurchase": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "confirm-purchase",
+        "Payload": {
+          "fanId.$": "$.fanId",
+          "seatId.$": "$.seatId",
+          "venueId.$": "$.venueId",
+          "transactionId.$": "$.transactionId",
+          "idempotencyKey.$": "$.idempotencyKey"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "CompensatePayment"
+        }
+      ],
+      "Next": "ConfirmDecided"
+    },
+    "ConfirmDecided": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.Payload.status",
+          "StringEquals": "confirmed",
+          "Next": "Success"
+        }
+      ],
+      "Default": "CompensatePayment"
+    },
+    "CompensatePayment": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "checkout",
+        "Payload": {
+          "action": "refund",
+          "fanId.$": "$.fanId",
+          "transactionId.$": "$.transactionId"
+        }
+      },
+      "Next": "PurchaseFailed"
+    },
+    "PurchaseFailed": {
+      "Type": "Fail",
+      "Cause": "Purchase confirmation failed, payment refunded",
+      "Error": "PurchaseFailedError"
+    },
+    "Success": {
+      "Type": "Succeed"
+    }
+  }
+}
