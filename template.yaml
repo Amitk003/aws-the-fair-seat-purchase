@@ -1,0 +1,385 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  The Fair Seat Purchase - High-concurrency ticket booking system.
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 30
+    MemorySize: 256
+    Architectures:
+      - arm64
+    Tracing: Active
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref TicketingSystemOps
+        TABLE_ARN: !GetAtt TicketingSystemOps.Arn
+
+Parameters:
+  StageName:
+    Type: String
+    Default: prod
+
+Resources:
+
+  # ============================================================
+  # DynamoDB
+  # ============================================================
+  TicketingSystemOps:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      TableName: TicketingSystemOps
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      TimeToLiveSpecification:
+        Enabled: true
+        AttributeName: ttl
+
+  # ============================================================
+  # Dead Letter Queue for StreamConsumer
+  # ============================================================
+  StreamConsumerDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: StreamConsumerDLQ
+      MessageRetentionPeriod: 1209600
+
+  # ============================================================
+  # IAM Roles
+  # ============================================================
+  HoldSeatRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+      Policies:
+        - PolicyName: DynamoDBWrite
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:UpdateItem
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                Resource: !GetAtt TicketingSystemOps.Arn
+        - PolicyName: EventBridgeSchedule
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - scheduler:CreateSchedule
+                  - scheduler:DeleteSchedule
+                  - scheduler:GetSchedule
+                Resource: '*'
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt EventBridgeSchedulerExecutionRole.Arn
+
+  StreamConsumerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+      Policies:
+        - PolicyName: DynamoDBStreamRead
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:DescribeStream
+                  - dynamodb:GetRecords
+                  - dynamodb:GetShardIterator
+                  - dynamodb:ListStreams
+                Resource: !GetAtt TicketingSystemOps.Arn
+              - Effect: Allow
+                Action: dynamodb:ListStreams
+                Resource: '*'
+        - PolicyName: S3Write
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub 'arn:aws:s3:::${SeatMapBucket}/*'
+        - PolicyName: SQSWrite
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                Resource: !GetAtt StreamConsumerDLQ.Arn
+
+  CheckoutSagaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - states.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+      Policies:
+        - PolicyName: DynamoDBTransaction
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:TransactWriteItems
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:ConditionCheck
+                Resource: !GetAtt TicketingSystemOps.Arn
+        - PolicyName: EventBridgeDeleteSchedule
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - scheduler:DeleteSchedule
+                  - scheduler:GetSchedule
+                Resource: '*'
+        - PolicyName: InvokeConfirmPurchase
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt ConfirmPurchaseFunction.Arn
+        - PolicyName: SQSSendMessage
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt CheckoutDLQ.Arn
+        - PolicyName: LogsWrite
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+
+  CheckoutDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: CheckoutDLQ
+      MessageRetentionPeriod: 1209600
+
+  EventBridgeSchedulerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DynamoDBUpdateItem
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: dynamodb:UpdateItem
+                Resource: !GetAtt TicketingSystemOps.Arn
+
+  # ============================================================
+  # Lambda Functions
+  # ============================================================
+  HoldSeatFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: hold-seat
+      CodeUri: src/handlers/hold-seat.js
+      Handler: index.handler
+      Role: !GetAtt HoldSeatRole.Arn
+      Environment:
+        Variables:
+          SCHEDULER_ROLE_ARN: !GetAtt EventBridgeSchedulerExecutionRole.Arn
+      Events:
+        HoldApi:
+          Type: HttpApi
+          Properties:
+            Path: /hold
+            Method: POST
+            ApiId: !Ref HttpApi
+
+  StreamConsumerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: stream-consumer
+      CodeUri: src/handlers/stream-consumer.js
+      Handler: index.handler
+      Role: !GetAtt StreamConsumerRole.Arn
+      Environment:
+        Variables:
+          SEAT_MAP_BUCKET: !Ref SeatMapBucket
+      Events:
+        DynamoDBStream:
+          Type: DynamoDB
+          Properties:
+            Stream: !GetAtt TicketingSystemOps.StreamArn
+            BatchSize: 100
+            StartingPosition: LATEST
+            MaximumRetryAttempts: 3
+            DestinationConfig:
+              OnFailure:
+                Type: SQS
+                Destination: !GetAtt StreamConsumerDLQ.Arn
+
+  ConfirmPurchaseFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: confirm-purchase
+      CodeUri: src/handlers/confirm-purchase.js
+      Handler: index.handler
+      Role: !GetAtt CheckoutSagaRole.Arn
+
+  CheckoutFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: checkout
+      CodeUri: src/handlers/checkout.js
+      Handler: index.handler
+      Role: !GetAtt HoldSeatRole.Arn
+      Environment:
+        Variables:
+          STATE_MACHINE_ARN: !Ref CheckoutSaga
+      Events:
+        CheckoutApi:
+          Type: HttpApi
+          Properties:
+            Path: /checkout
+            Method: POST
+            ApiId: !Ref HttpApi
+
+  # ============================================================
+  # Step Functions State Machine
+  # ============================================================
+  CheckoutSaga:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: checkout-saga
+      DefinitionUri: state-machines/checkout-saga.asl.json
+      Role: !GetAtt CheckoutSagaRole.Arn
+      Type: EXPRESS
+      Logging:
+        Level: ALL
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt CheckoutSagaLogGroup.Arn
+      Tracing:
+        Enabled: true
+
+  CheckoutSagaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/step-functions/checkout-saga
+      RetentionInDays: 7
+
+  # ============================================================
+  # API Gateway
+  # ============================================================
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref StageName
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 5000
+        ThrottlingRateLimit: 10000
+      FailOnWarnings: true
+
+  # ============================================================
+  # S3 Bucket for Seat Map Cache
+  # ============================================================
+  SeatMapBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub seat-map-cache-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: false
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: false
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+            AllowedOrigins:
+              - '*'
+            MaxAge: 3600
+
+  SeatMapBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SeatMapBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub ${SeatMapBucket.Arn}/*
+
+Outputs:
+  HttpApiUrl:
+    Description: Base URL for the API Gateway
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}
+  TicketingSystemOpsTableName:
+    Description: DynamoDB table name
+    Value: !Ref TicketingSystemOps
+  TicketingSystemOpsStreamArn:
+    Description: DynamoDB stream ARN
+    Value: !GetAtt TicketingSystemOps.StreamArn
+  CheckoutSagaArn:
+    Description: Step Functions state machine ARN
+    Value: !Ref CheckoutSaga
+  SeatMapBucketName:
+    Description: S3 bucket for cached seat map
+    Value: !Ref SeatMapBucket
