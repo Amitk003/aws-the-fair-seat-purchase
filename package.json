@@ -1,0 +1,19 @@
+{
+  "name": "the-fair-seat-purchase",
+  "version": "1.0.0",
+  "private": true,
+  "description": "High-concurrency ticket booking system on AWS serverless",
+  "scripts": {
+    "seed": "node tools/seed-stadium.js",
+    "test:unit": "jest tests/unit",
+    "test:load": "artillery run tests/load/load-config.yml"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/client-scheduler": "^3.600.0",
+    "@aws-sdk/util-dynamodb": "^3.600.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
