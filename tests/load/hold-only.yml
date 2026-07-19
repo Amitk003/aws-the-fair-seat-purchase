@@ -1,0 +1,45 @@
+config:
+  target: "{{ $processEnvironment.API_URL }}"
+  phases:
+    - duration: 30
+      arrivalRate: 5
+      rampTo: 20
+      name: "Warm up hold endpoint"
+    - duration: 60
+      arrivalRate: 20
+      rampTo: 100
+      name: "Ramp up hold pressure"
+    - duration: 30
+      arrivalRate: 100
+      rampTo: 200
+      name: "Peak hold load"
+    - duration: 30
+      arrivalRate: 200
+      name: "Sustain peak hold load"
+  payload:
+    path: "seats.csv"
+    fields:
+      - "seatId"
+      - "venueId"
+      - "section"
+    order: "random"
+    skipHeader: true
+  defaults:
+    headers:
+      Content-Type: "application/json"
+
+scenarios:
+  - name: "Hold a seat"
+    weight: 1
+    flow:
+      - post:
+          url: "/hold"
+          json:
+            seatId: "{{ seatId }}"
+            fanId: "FAN#{{ $randomString(8) }}"
+            idempotencyKey: "hold-{{ $randomString(16) }}"
+            venue: "{{ venueId }}"
+          capture:
+            - json: "$.statusCode"
+              as: "statusCode"
+      - think: 0.5

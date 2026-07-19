@@ -1,0 +1,20 @@
+config:
+  target: "{{ $processEnvironment.API_URL }}"
+  environments:
+    production:
+      target: "{{ $processEnvironment.API_URL }}"
+    local:
+      target: "http://localhost:3000"
+  plugins:
+    ensure:
+      thresholds:
+        - "http.response_time.p95": 2000
+        - "http.response_time.p99": 5000
+        - "http.codes.409": 30
+        - "http.codes.500": 0
+  ensure:
+    thresholds:
+      - "http.response_time.p95": 2000
+      - "http.response_time.p99": 5000
+      - "http.codes.409": 30
+      - "http.codes.500": 0

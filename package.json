@@ -6,7 +6,8 @@
   "scripts": {
     "seed": "node tools/seed-stadium.js",
     "test:unit": "jest tests/unit",
-    "test:load": "artillery run tests/load/load-config.yml"
+    "test:load": "artillery run tests/load/hold-only.yml",
+    "test:load:checkout": "artillery run tests/load/full-checkout.yml"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.600.0",
@@ -16,6 +17,7 @@
     "@aws-sdk/util-dynamodb": "^3.600.0"
   },
   "devDependencies": {
+    "artillery": "^2.0.33",
     "jest": "^29.7.0"
   },
   "jest": {

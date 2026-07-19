@@ -1,0 +1,53 @@
+config:
+  target: "{{ $processEnvironment.API_URL }}"
+  phases:
+    - duration: 30
+      arrivalRate: 3
+      rampTo: 10
+      name: "Warm up checkout flow"
+    - duration: 60
+      arrivalRate: 10
+      rampTo: 30
+      name: "Ramp up checkout pressure"
+    - duration: 30
+      arrivalRate: 30
+      name: "Sustain checkout load"
+  payload:
+    path: "seats.csv"
+    fields:
+      - "seatId"
+      - "venueId"
+      - "section"
+    order: "random"
+    skipHeader: true
+  defaults:
+    headers:
+      Content-Type: "application/json"
+
+scenarios:
+  - name: "Hold and checkout a seat"
+    weight: 1
+    flow:
+      - post:
+          url: "/hold"
+          json:
+            seatId: "{{ seatId }}"
+            fanId: "FAN#{{ $randomString(8) }}"
+            idempotencyKey: "ck-{{ $randomString(16) }}"
+            venue: "{{ venueId }}"
+          capture:
+            - json: "$.statusCode"
+              as: "holdStatus"
+      - think: 1
+      - post:
+          url: "/checkout"
+          json:
+            seatId: "{{ seatId }}"
+            fanId: "FAN#{{ $randomString(8) }}"
+            idempotencyKey: "ck-{{ $randomString(16) }}"
+            paymentToken: "tok_visa"
+            amount: 5000
+            venueId: "{{ venueId }}"
+          capture:
+            - json: "$.statusCode"
+              as: "checkoutStatus"
