@@ -59,13 +59,20 @@ exports.handler = async (event) => {
   }
 
   try {
+    // 1. Update sharded counters in DynamoDB (using ADD)
     await Promise.all(
       Object.entries(sectionChanges).flatMap(([venueId, sections]) =>
         Object.entries(sections).map(([sectionId, counts]) =>
-          Promise.all([
-            updateShardedCounter(venueId, sectionId, counts),
-            uploadSectionCache(venueId, sectionId, counts),
-          ])
+          updateShardedCounter(venueId, sectionId, counts)
+        )
+      )
+    );
+
+    // 2. Aggregate all shards and write true totals to S3 Edge Cache
+    await Promise.all(
+      Object.entries(sectionChanges).flatMap(([venueId, sections]) =>
+        Object.entries(sections).map(([sectionId]) =>
+          aggregateAndUploadCache(venueId, sectionId)
         )
       )
     );
@@ -106,7 +113,7 @@ async function updateShardedCounter(venueId, sectionId, counts) {
   await ddbClient.send(new UpdateItemCommand({
     TableName: TABLE_NAME,
     Key: counterKey,
-    UpdateExpression: 'SET available = :available, held = :held, sold = :sold, updated_at = :updatedAt',
+    UpdateExpression: 'ADD available :available, held :held, sold :sold SET updated_at = :updatedAt',
     ExpressionAttributeValues: marshall({
       ':available': counts.available,
       ':held': counts.held,
@@ -114,6 +121,39 @@ async function updateShardedCounter(venueId, sectionId, counts) {
       ':updatedAt': Math.floor(Date.now() / 1000),
     }),
   }));
+}
+
+async function aggregateAndUploadCache(venueId, sectionId) {
+  const { BatchGetItemCommand } = require('@aws-sdk/client-dynamodb');
+  const keys = [];
+  for (let shard = 1; shard <= SECTION_SHARD_COUNT; shard++) {
+    keys.push(marshall({
+      PK: `VENUE#${venueId}`,
+      SK: `COUNTER#${sectionId}#Shard${shard}`,
+    }));
+  }
+
+  const response = await ddbClient.send(new BatchGetItemCommand({
+    RequestItems: {
+      [TABLE_NAME]: {
+        Keys: keys,
+      },
+    },
+  }));
+
+  const items = (response.Responses && response.Responses[TABLE_NAME]) || [];
+  let available = 0;
+  let held = 0;
+  let sold = 0;
+
+  for (const item of items) {
+    const data = unmarshall(item);
+    available += data.available || 0;
+    held += data.held || 0;
+    sold += data.sold || 0;
+  }
+
+  await uploadSectionCache(venueId, sectionId, { available, held, sold });
 }
 
 async function uploadSectionCache(venueId, sectionId, counts) {
