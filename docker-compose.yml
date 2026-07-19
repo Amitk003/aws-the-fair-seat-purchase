@@ -1,0 +1,17 @@
+version: '3.8'
+services:
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack-seat-purchase
+    ports:
+      - '4566:4566'
+    environment:
+      - SERVICES=dynamodb,lambda,apigatewayv2,stepfunctions,events,s3,sqs
+      - DEBUG=0
+      - PERSISTENCE=1
+    volumes:
+      - localstack-data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  localstack-data:
