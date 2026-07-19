@@ -2,6 +2,7 @@ const { UpdateItemCommand } = require('@aws-sdk/client-dynamodb');
 const { marshall, unmarshall } = require('@aws-sdk/util-dynamodb');
 const { getClient, getTableName } = require('../utils/dynamodb');
 const { tryAcquireLock, complete, deleteLock } = require('../utils/idempotency');
+const { scheduleEviction } = require('../utils/scheduler');
 
 const client = getClient();
 const TABLE_NAME = getTableName();
@@ -64,6 +65,29 @@ exports.handler = async (event) => {
         holdExpiresAt: expiresAt,
         seat: unmarshall(result.Attributes),
       };
+
+      try {
+        await scheduleEviction(seatId, fanId, venueId, expiresAt);
+      } catch (schedulerErr) {
+        console.error('Failed to create eviction schedule, rolling back seat hold:', schedulerErr.message);
+        try {
+          await client.send(new UpdateItemCommand({
+            TableName: TABLE_NAME,
+            Key: marshall({ PK: `VENUE#${venueId}`, SK: `SEAT#${seatId}` }),
+            UpdateExpression: 'SET #status = :available REMOVE held_by, hold_expires_at',
+            ConditionExpression: '#status = :held AND held_by = :fanId',
+            ExpressionAttributeNames: { '#status': 'status' },
+            ExpressionAttributeValues: marshall({
+              ':available': 'available',
+              ':held': 'held',
+              ':fanId': fanId,
+            }),
+          }));
+        } catch (rollbackErr) {
+          console.error('Critical: Failed to rollback seat hold after scheduler failure:', rollbackErr.message);
+        }
+        throw new Error(`Failed to schedule hold eviction: ${schedulerErr.message}`);
+      }
 
       await complete(idempotencyKey, responsePayload);
 

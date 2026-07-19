@@ -29,14 +29,16 @@ function buildScheduleName(seatId, fanId) {
 
 async function scheduleEviction(seatId, fanId, venueId, expiresAt) {
   const schedulerClient = getClient();
+  const tableArn = process.env.TABLE_ARN;
   const tableName = process.env.TABLE_NAME;
   const schedulerRoleArn = process.env.SCHEDULER_ROLE_ARN;
 
-  if (!tableName || !schedulerRoleArn) {
-    throw new Error('Missing required env vars: TABLE_NAME, SCHEDULER_ROLE_ARN');
+  if (!tableArn || !tableName || !schedulerRoleArn) {
+    throw new Error('Missing required env vars: TABLE_ARN, TABLE_NAME, SCHEDULER_ROLE_ARN');
   }
 
   const scheduleName = buildScheduleName(seatId, fanId);
+
   const scheduleDate = new Date(expiresAt * 1000);
   const isoString = scheduleDate.toISOString().replace(/\.\d{3}/, '');
 
@@ -91,7 +93,9 @@ async function getEvictionStatus(seatId, fanId) {
   const scheduleName = buildScheduleName(seatId, fanId);
 
   try {
-    await schedulerClient.send(new GetScheduleCommand({ Name: scheduleName }));
+    await schedulerClient.send(new GetScheduleCommand({
+      Name: scheduleName,
+    }));
     return { exists: true };
   } catch (err) {
     if (err.name === 'ResourceNotFoundException') {
