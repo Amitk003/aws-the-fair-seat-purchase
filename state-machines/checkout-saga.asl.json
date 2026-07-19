@@ -84,6 +84,18 @@
       "Default": "PaymentFailed"
     },
     "PaymentFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "checkout",
+        "Payload": {
+          "action": "releaseLock",
+          "idempotencyKey.$": "$.idempotencyKey"
+        }
+      },
+      "Next": "PaymentFailedExit"
+    },
+    "PaymentFailedExit": {
       "Type": "Fail",
       "Cause": "Payment processing failed",
       "Error": "PaymentFailedError"
@@ -164,6 +176,18 @@
       "Next": "PurchaseFailed"
     },
     "PurchaseFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "checkout",
+        "Payload": {
+          "action": "releaseLock",
+          "idempotencyKey.$": "$.idempotencyKey"
+        }
+      },
+      "Next": "PurchaseFailedExit"
+    },
+    "PurchaseFailedExit": {
       "Type": "Fail",
       "Cause": "Purchase confirmation failed, payment refunded",
       "Error": "PurchaseFailedError"

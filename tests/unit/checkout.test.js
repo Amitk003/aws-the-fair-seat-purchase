@@ -150,4 +150,20 @@ describe('checkout handler', () => {
 
     expect(result.statusCode).toBe(500);
   });
+
+  test('handles releaseLock action', async () => {
+    mockIdempotency.deleteLock.mockResolvedValue(undefined);
+
+    const event = {
+      body: JSON.stringify({
+        action: 'releaseLock',
+        idempotencyKey: 'idemp-001',
+      }),
+    };
+
+    const result = await handler(event);
+
+    expect(result.status).toBe('released');
+    expect(mockIdempotency.deleteLock).toHaveBeenCalledWith('idemp-001');
+  });
 });

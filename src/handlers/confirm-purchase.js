@@ -22,12 +22,23 @@ exports.handler = async (event) => {
     await client.send(new TransactWriteItemsCommand({
       TransactItems: [
         {
-          ConditionCheck: {
+          Update: {
             TableName: TABLE_NAME,
             Key: marshall({ PK: `IDEMP#${idempotencyKey}`, SK: `IDEMP#${idempotencyKey}` }),
+            UpdateExpression: 'SET #status = :completed, #response = :response',
             ConditionExpression: 'attribute_exists(PK) AND #status = :inProgress',
-            ExpressionAttributeNames: { '#status': 'status' },
-            ExpressionAttributeValues: marshall({ ':inProgress': 'in_progress' }),
+            ExpressionAttributeNames: { '#status': 'status', '#response': 'response' },
+            ExpressionAttributeValues: marshall({
+              ':completed': 'completed',
+              ':inProgress': 'in_progress',
+              ':response': JSON.stringify({
+                status: 'confirmed',
+                transactionId,
+                seatId,
+                venueId: venue,
+                confirmedAt: now,
+              }),
+            }),
           },
         },
         {

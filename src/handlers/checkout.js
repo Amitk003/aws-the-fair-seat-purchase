@@ -29,6 +29,11 @@ exports.handler = async (event) => {
       return handleRefund(body);
     }
 
+    if (action === 'releaseLock') {
+      await deleteLock(body.idempotencyKey);
+      return { status: 'released' };
+    }
+
     const { seatId, fanId, idempotencyKey, venueId, paymentToken, amount } = body;
 
     if (!seatId || !fanId || !idempotencyKey || !paymentToken) {
