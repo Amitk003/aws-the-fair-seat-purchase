@@ -36,18 +36,15 @@ scenarios:
             idempotencyKey: "ck-{{ $randomString(16) }}"
             venue: "{{ venueId }}"
           capture:
-            - json: "$.statusCode"
-              as: "holdStatus"
+            - json: "$.seat.held_by"
+              as: "fanId"
       - think: 1
       - post:
           url: "/checkout"
           json:
             seatId: "{{ seatId }}"
-            fanId: "FAN#{{ $randomString(8) }}"
+            fanId: "{{ fanId }}"
             idempotencyKey: "ck-{{ $randomString(16) }}"
             paymentToken: "tok_visa"
             amount: 5000
             venueId: "{{ venueId }}"
-          capture:
-            - json: "$.statusCode"
-              as: "checkoutStatus"
