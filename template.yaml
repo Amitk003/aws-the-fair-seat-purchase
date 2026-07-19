@@ -143,7 +143,7 @@ Resources:
                   - sqs:SendMessage
                 Resource: !GetAtt StreamConsumerDLQ.Arn
 
-   ConfirmPurchaseRole:
+  ConfirmPurchaseRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
