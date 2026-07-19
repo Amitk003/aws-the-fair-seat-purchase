@@ -15,6 +15,13 @@ const mockIdempotency = {
 };
 jest.mock('../../src/utils/idempotency', () => mockIdempotency);
 
+const mockScheduler = {
+  scheduleEviction: jest.fn(),
+  cancelEviction: jest.fn(),
+  getEvictionStatus: jest.fn(),
+};
+jest.mock('../../src/utils/scheduler', () => mockScheduler);
+
 const handler = require('../../src/handlers/hold-seat').handler;
 
 describe('hold-seat handler', () => {
@@ -42,6 +49,7 @@ describe('hold-seat handler', () => {
   test('returns 200 and acquires hold when seat is available', async () => {
     mockIdempotency.tryAcquireLock.mockResolvedValue({ acquired: true });
     mockIdempotency.complete.mockResolvedValue(undefined);
+    mockScheduler.scheduleEviction.mockResolvedValue('evict-Sec1-RowA-Seat12-FAN-user001');
     mockSend.mockResolvedValue({
       Attributes: marshall({
         PK: 'VENUE#Wembley',
@@ -117,6 +125,32 @@ describe('hold-seat handler', () => {
     const result = await handler(validEvent);
 
     expect(result.statusCode).toBe(500);
+    expect(mockIdempotency.deleteLock).toHaveBeenCalledWith('uuid-123');
+  });
+
+  test('returns 500 and rolls back hold when scheduling eviction fails', async () => {
+    mockIdempotency.tryAcquireLock.mockResolvedValue({ acquired: true });
+    mockScheduler.scheduleEviction.mockRejectedValue(new Error('Scheduler rate limit exceeded'));
+    
+    // First call: UpdateItem for seat hold succeeds
+    mockSend.mockResolvedValueOnce({
+      Attributes: marshall({
+        PK: 'VENUE#Wembley',
+        SK: 'SEAT#Sec1#RowA#Seat12',
+        status: 'held',
+        held_by: 'FAN#user001',
+        hold_expires_at: Math.floor(Date.now() / 1000) + 480,
+      }),
+    });
+    // Second call: UpdateItem for rollback succeeds
+    mockSend.mockResolvedValueOnce({});
+
+    const result = await handler(validEvent);
+
+    expect(result.statusCode).toBe(500);
+    // Verify seat hold UpdateItem and rollback UpdateItem were called
+    expect(mockSend).toHaveBeenCalledTimes(2);
+    // Verify idempotency lock was released
     expect(mockIdempotency.deleteLock).toHaveBeenCalledWith('uuid-123');
   });
 });

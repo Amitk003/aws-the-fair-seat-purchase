@@ -44,7 +44,7 @@ describe('scheduler', () => {
         FlexibleTimeWindow: { Mode: 'OFF' },
         ActionAfterCompletion: 'DELETE',
         Target: expect.objectContaining({
-          Arn: process.env.TABLE_ARN,
+          Arn: 'arn:aws:scheduler:::aws-sdk:dynamodb:updateItem',
           RoleArn: process.env.SCHEDULER_ROLE_ARN,
         }),
       })

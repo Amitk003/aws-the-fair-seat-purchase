@@ -66,13 +66,30 @@ exports.handler = async (event) => {
         seat: unmarshall(result.Attributes),
       };
 
-      await complete(idempotencyKey, responsePayload);
-
       try {
         await scheduleEviction(seatId, fanId, venueId, expiresAt);
       } catch (schedulerErr) {
-        console.error('Failed to create eviction schedule:', schedulerErr.message);
+        console.error('Failed to create eviction schedule, rolling back seat hold:', schedulerErr.message);
+        try {
+          await client.send(new UpdateItemCommand({
+            TableName: TABLE_NAME,
+            Key: marshall({ PK: `VENUE#${venueId}`, SK: `SEAT#${seatId}` }),
+            UpdateExpression: 'SET #status = :available REMOVE held_by, hold_expires_at',
+            ConditionExpression: '#status = :held AND held_by = :fanId',
+            ExpressionAttributeNames: { '#status': 'status' },
+            ExpressionAttributeValues: marshall({
+              ':available': 'available',
+              ':held': 'held',
+              ':fanId': fanId,
+            }),
+          }));
+        } catch (rollbackErr) {
+          console.error('Critical: Failed to rollback seat hold after scheduler failure:', rollbackErr.message);
+        }
+        throw new Error(`Failed to schedule hold eviction: ${schedulerErr.message}`);
       }
+
+      await complete(idempotencyKey, responsePayload);
 
       return {
         statusCode: 200,

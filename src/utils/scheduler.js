@@ -46,7 +46,7 @@ async function scheduleEviction(seatId, fanId, venueId, expiresAt) {
     Name: scheduleName,
     ScheduleExpression: `at(${isoString})`,
     Target: {
-      Arn: tableArn,
+      Arn: 'arn:aws:scheduler:::aws-sdk:dynamodb:updateItem',
       RoleArn: schedulerRoleArn,
       Input: JSON.stringify({
         TableName: tableName,
