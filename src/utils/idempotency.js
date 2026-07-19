@@ -77,4 +77,12 @@ async function fail(idempotencyKey, errorPayload) {
   }));
 }
 
-module.exports = { tryAcquireLock, complete, fail };
+async function deleteLock(idempotencyKey) {
+  const { DeleteItemCommand } = require('@aws-sdk/client-dynamodb');
+  await client.send(new DeleteItemCommand({
+    TableName: TABLE_NAME,
+    Key: buildKey(idempotencyKey),
+  }));
+}
+
+module.exports = { tryAcquireLock, complete, fail, deleteLock };

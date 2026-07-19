@@ -11,6 +11,7 @@ const mockIdempotency = {
   tryAcquireLock: jest.fn(),
   complete: jest.fn(),
   fail: jest.fn(),
+  deleteLock: jest.fn(),
 };
 jest.mock('../../src/utils/idempotency', () => mockIdempotency);
 
@@ -57,6 +58,14 @@ describe('hold-seat handler', () => {
     const body = JSON.parse(result.body);
     expect(body.message).toBe('Seat hold acquired');
     expect(body.seatId).toBe('Sec1#RowA#Seat12');
+    expect(body.seat).toEqual({
+      PK: 'VENUE#Wembley',
+      SK: 'SEAT#Sec1#RowA#Seat12',
+      status: 'held',
+      held_by: 'FAN#user001',
+      hold_expires_at: expect.any(Number),
+    });
+    expect(mockIdempotency.complete).toHaveBeenCalledWith('uuid-123', expect.any(Object));
   });
 
   test('returns 409 when seat is already held by another user', async () => {
@@ -68,6 +77,10 @@ describe('hold-seat handler', () => {
     expect(result.statusCode).toBe(409);
     const body = JSON.parse(result.body);
     expect(body.error).toBe('Seat is not available');
+    expect(mockIdempotency.complete).toHaveBeenCalledWith('uuid-123', {
+      error: 'Seat is not available',
+      seatId: 'Sec1#RowA#Seat12',
+    });
   });
 
   test('returns cached response for duplicate idempotency key', async () => {
@@ -97,12 +110,13 @@ describe('hold-seat handler', () => {
     expect(body.error).toBe('Request already in progress');
   });
 
-  test('returns 500 on unexpected error', async () => {
+  test('returns 500 on unexpected error and releases lock', async () => {
     mockIdempotency.tryAcquireLock.mockResolvedValue({ acquired: true });
     mockSend.mockRejectedValue(new Error('Network error'));
 
     const result = await handler(validEvent);
 
     expect(result.statusCode).toBe(500);
+    expect(mockIdempotency.deleteLock).toHaveBeenCalledWith('uuid-123');
   });
 });

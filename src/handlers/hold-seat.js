@@ -1,7 +1,7 @@
 const { UpdateItemCommand } = require('@aws-sdk/client-dynamodb');
-const { marshall } = require('@aws-sdk/util-dynamodb');
+const { marshall, unmarshall } = require('@aws-sdk/util-dynamodb');
 const { getClient, getTableName } = require('../utils/dynamodb');
-const { tryAcquireLock, complete } = require('../utils/idempotency');
+const { tryAcquireLock, complete, deleteLock } = require('../utils/idempotency');
 
 const client = getClient();
 const TABLE_NAME = getTableName();
@@ -22,11 +22,12 @@ exports.handler = async (event) => {
     const idempotentResult = await tryAcquireLock(idempotencyKey);
     if (!idempotentResult.acquired) {
       if (idempotentResult.status === 'completed') {
+        const responseObj = typeof idempotentResult.response === 'string'
+          ? JSON.parse(idempotentResult.response)
+          : idempotentResult.response;
         return {
-          statusCode: 200,
-          body: typeof idempotentResult.response === 'string'
-            ? idempotentResult.response
-            : JSON.stringify(idempotentResult.response),
+          statusCode: responseObj.error ? 409 : 200,
+          body: JSON.stringify(responseObj),
         };
       }
       return {
@@ -61,7 +62,7 @@ exports.handler = async (event) => {
         seatId,
         venueId,
         holdExpiresAt: expiresAt,
-        seat: marshall(result.Attributes, { removeUndefinedValues: true }),
+        seat: unmarshall(result.Attributes),
       };
 
       await complete(idempotencyKey, responsePayload);
@@ -71,16 +72,16 @@ exports.handler = async (event) => {
         body: JSON.stringify(responsePayload),
       };
     } catch (err) {
-      const { fail } = require('../utils/idempotency');
-      await fail(idempotencyKey, { error: err.message });
-
       if (err.name === 'ConditionalCheckFailedException') {
+        const responsePayload = { error: 'Seat is not available', seatId };
+        await complete(idempotencyKey, responsePayload);
         return {
           statusCode: 409,
-          body: JSON.stringify({ error: 'Seat is not available', seatId }),
+          body: JSON.stringify(responsePayload),
         };
       }
 
+      await deleteLock(idempotencyKey);
       throw err;
     }
   } catch (err) {
@@ -90,9 +91,4 @@ exports.handler = async (event) => {
       body: JSON.stringify({ error: 'Could not process hold request' }),
     };
   }
-exports.handler = async (event) => {
-  return {
-    statusCode: 501,
-    body: JSON.stringify({ error: 'Not implemented' }),
-  };
 };
