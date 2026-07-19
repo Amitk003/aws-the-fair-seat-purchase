@@ -6,7 +6,7 @@ Description: >
 
 Globals:
   Function:
-    Runtime: nodejs20.x
+    Runtime: nodejs24.x
     Timeout: 30
     MemorySize: 256
     Architectures:
@@ -143,6 +143,39 @@ Resources:
                   - sqs:SendMessage
                 Resource: !GetAtt StreamConsumerDLQ.Arn
 
+   ConfirmPurchaseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+      Policies:
+        - PolicyName: DynamoDBTransaction
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:TransactWriteItems
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:ConditionCheck
+                Resource: !GetAtt TicketingSystemOps.Arn
+        - PolicyName: SQSSendMessage
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt CheckoutDLQ.Arn
+
   CheckoutSagaRole:
     Type: AWS::IAM::Role
     Properties:
@@ -278,7 +311,7 @@ Resources:
       FunctionName: confirm-purchase
       CodeUri: src/handlers/confirm-purchase.js
       Handler: index.handler
-      Role: !GetAtt CheckoutSagaRole.Arn
+      Role: !GetAtt ConfirmPurchaseRole.Arn
 
   CheckoutFunction:
     Type: AWS::Serverless::Function
