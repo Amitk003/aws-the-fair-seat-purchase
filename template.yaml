@@ -6,7 +6,7 @@ Description: >
 
 Globals:
   Function:
-    Runtime: nodejs20.x
+    Runtime: nodejs24.x
     Timeout: 30
     MemorySize: 256
     Architectures:
@@ -143,6 +143,39 @@ Resources:
                   - sqs:SendMessage
                 Resource: !GetAtt StreamConsumerDLQ.Arn
 
+  ConfirmPurchaseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+      Policies:
+        - PolicyName: DynamoDBTransaction
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:TransactWriteItems
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:ConditionCheck
+                Resource: !GetAtt TicketingSystemOps.Arn
+        - PolicyName: SQSSendMessage
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt CheckoutDLQ.Arn
+
   CheckoutSagaRole:
     Type: AWS::IAM::Role
     Properties:
@@ -278,7 +311,7 @@ Resources:
       FunctionName: confirm-purchase
       CodeUri: src/handlers/confirm-purchase.js
       Handler: index.handler
-      Role: !GetAtt CheckoutSagaRole.Arn
+      Role: !GetAtt ConfirmPurchaseRole.Arn
 
   CheckoutFunction:
     Type: AWS::Serverless::Function
@@ -367,6 +400,68 @@ Resources:
             Principal: '*'
             Action: s3:GetObject
             Resource: !Sub ${SeatMapBucket.Arn}/*
+
+  # ============================================================
+  # Observability Alarms & SNS Topic
+  # ============================================================
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: Ticketing-Alarms
+
+  TicketingThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Ticketing-DynamoDB-Throttled
+      AlarmDescription: DynamoDB requests are being throttled
+      Namespace: AWS/DynamoDB
+      MetricName: ThrottledRequests
+      Dimensions:
+        - Name: TableName
+          Value: !Ref TicketingSystemOps
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmTopic
+
+  StreamIteratorAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Ticketing-Stream-IteratorAge
+      AlarmDescription: DynamoDB Stream consumer is falling behind
+      Namespace: AWS/DynamoDB
+      MetricName: IteratorAgeMilliseconds
+      Dimensions:
+        - Name: TableName
+          Value: !Ref TicketingSystemOps
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 5000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmTopic
+
+  ScheduleCountAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: Ticketing-ScheduleCount-High
+      AlarmDescription: EventBridge schedule count approaching regional quota
+      Namespace: AWS/Scheduler
+      MetricName: ScheduleCount
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmTopic
 
 Outputs:
   HttpApiUrl:
