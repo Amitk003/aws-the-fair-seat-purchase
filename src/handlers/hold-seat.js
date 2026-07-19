@@ -90,4 +90,9 @@ exports.handler = async (event) => {
       body: JSON.stringify({ error: 'Could not process hold request' }),
     };
   }
+exports.handler = async (event) => {
+  return {
+    statusCode: 501,
+    body: JSON.stringify({ error: 'Not implemented' }),
+  };
 };
