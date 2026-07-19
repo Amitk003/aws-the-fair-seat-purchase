@@ -2,6 +2,7 @@ const { UpdateItemCommand } = require('@aws-sdk/client-dynamodb');
 const { marshall, unmarshall } = require('@aws-sdk/util-dynamodb');
 const { getClient, getTableName } = require('../utils/dynamodb');
 const { tryAcquireLock, complete, deleteLock } = require('../utils/idempotency');
+const { scheduleEviction } = require('../utils/scheduler');
 
 const client = getClient();
 const TABLE_NAME = getTableName();
@@ -66,6 +67,12 @@ exports.handler = async (event) => {
       };
 
       await complete(idempotencyKey, responsePayload);
+
+      try {
+        await scheduleEviction(seatId, fanId, venueId, expiresAt);
+      } catch (schedulerErr) {
+        console.error('Failed to create eviction schedule:', schedulerErr.message);
+      }
 
       return {
         statusCode: 200,
