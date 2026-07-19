@@ -6,6 +6,7 @@ const mockS3Send = jest.fn();
 jest.mock('@aws-sdk/client-dynamodb', () => ({
   DynamoDBClient: jest.fn(() => ({ send: mockDdbSend })),
   UpdateItemCommand: jest.fn(),
+  BatchGetItemCommand: jest.fn(),
 }));
 
 jest.mock('@aws-sdk/client-s3', () => ({
@@ -67,7 +68,7 @@ describe('stream-consumer handler', () => {
     const result = await handler(event);
 
     expect(result.batchItemFailures).toHaveLength(0);
-    expect(mockDdbSend).toHaveBeenCalledTimes(1);
+    expect(mockDdbSend).toHaveBeenCalledTimes(2);
     expect(mockS3Send).toHaveBeenCalledTimes(1);
   });
 
@@ -79,7 +80,7 @@ describe('stream-consumer handler', () => {
     const result = await handler(event);
 
     expect(result.batchItemFailures).toHaveLength(0);
-    expect(mockDdbSend).toHaveBeenCalledTimes(1);
+    expect(mockDdbSend).toHaveBeenCalledTimes(2);
     expect(mockS3Send).toHaveBeenCalledTimes(1);
   });
 
