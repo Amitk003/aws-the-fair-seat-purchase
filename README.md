@@ -65,3 +65,7 @@ Each feature is developed on its own branch. Branches are not merged automatical
 - `cqrs-cache` - Real-time seat map caching
 - `load-testing` - Performance and load tests
 - `observability` - Monitoring, alerts, and CI/CD
+
+## Setup
+
+See [SETUP.md](SETUP.md) for local development and deployment instructions.
